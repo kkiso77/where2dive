@@ -1,0 +1,1305 @@
+<!--
+  prototype shell: the review chrome every prototype starts from.
+
+  Keep this comment in the prototype you grow from here: it is the contract,
+  and later turns work from that file rather than from this one.
+
+  Contract (extend product screens; keep the review shell):
+  - Product:  .sh-stage contains only end-user product UI. Keep review notes,
+               rationale, instructions, and approval controls in conversation.
+  - Screens:  <section data-screen="slug" data-title="Label"> inside .sh-stage.
+               The selector, arrow keys, and #hash routing build themselves.
+               Use one option per product destination or distinct surface,
+               named by its product role. Keep baselines, variants, comparison
+               labels, steps, indexes, and progress out of names and states.
+               Links may use href="#slug".
+  - States:   "Default" is automatic. A screen declares only representative
+               presets in data-states="Empty,Error". Use natural, screen-specific
+               names. Reserve presets for important multi-step results, forced
+               data or errors, or materially different structure; keep one-click
+               and transient states as interactions. Use data-when="Empty" on
+               preset-only elements. Call prototypeShell.setState("Name") on
+               entry and setState("Default") on exit, including when repeated
+               actions cross a preset condition.
+  - Viewport: "vp (m)" cycles full / 390 / 768. The 390 preset is a
+               fixed-height, internally scrolling phone frame. Start a
+               mobile-first prototype by adding class="sh-vp-390" to <body>
+               (or a bootstrap classList.add before the chrome script runs).
+  - Pinning:  keep in-frame bars (tab bars, CTAs) inside the phone with
+               position: sticky; position: fixed pins to the browser window.
+  - Tokens:   replace the project-tokens block with project tokens copied
+               verbatim. Map differing names to --background, --foreground, and
+               --font afterwards; replace network fonts with a system stack and
+               note that substitution. Without a design system, keep this
+               palette as the finished style.
+  - Placeholders: .wf-pic stands in for pictures the prototype has no real
+               files for. Use real text everywhere text belongs.
+
+  - Chrome:   Keep exactly the screen selector, selected-screen state selector,
+               and viewport cycle. Chrome that needs explaining has failed.
+
+  Self-contained by design: no build, no framework, no network.
+-->
+<meta charset="utf-8">
+<title>Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ── project tokens: copied from app/globals.css (shadcn), oklch verbatim ── */
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --radius: 0.625rem;
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    /* project uses next/font Inter; substituted with a system stack here */
+    --font: -apple-system, "Segoe UI", Pretendard, Inter, sans-serif;
+
+    /* product-specific accents (not in design system; introduced here) */
+    --optimal: oklch(0.63 0.17 155);
+    --optimal-bg: oklch(0.96 0.05 155);
+    --good: oklch(0.75 0.15 85);
+    --good-bg: oklch(0.96 0.07 85);
+    --poor-bg: oklch(0.95 0 0);
+    --map-water: oklch(0.93 0.02 220);
+    --map-land: oklch(0.9 0.02 110);
+  }
+
+  /* ── review chrome (sh-*): keep; extend product styles elsewhere ── */
+  * { box-sizing: border-box }
+  body {
+    margin: 0; padding: 0 0 40px;
+    background: var(--background, #f6f6f6); color: var(--foreground, #3a3a3a);
+    font-family: var(--font, system-ui, sans-serif);
+  }
+  .sh-bar {
+    position: sticky; top: 0; z-index: 999;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; background: #191a1c; color: #d7d7d7;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .sh-bar b, .sh-control-label { color: #8a8f98; font-weight: 500 }
+  .sh-control { display: inline-flex; gap: 5px; align-items: center }
+  .sh-bar button {
+    border: 1px solid #3a3d42; background: none; color: inherit;
+    font: inherit; padding: 2px 9px; border-radius: 99px; cursor: pointer;
+  }
+  .sh-bar select {
+    width: 170px; border: 1px solid #3a3d42; background: #232428; color: inherit;
+    font: inherit; padding: 3px 28px 3px 9px; border-radius: 7px; cursor: pointer;
+    color-scheme: dark;
+  }
+  #sh-screen { width: 190px }
+  .sh-bar button.on { background: #d7d7d7; color: #191a1c; border-color: #d7d7d7 }
+  .sh-spacer { flex: 1 }
+  .sh-stage { max-width: 960px; margin: 0 auto; padding: 12px 16px 0 }
+  [hidden] { display: none !important }
+
+  /* viewport presets */
+  .sh-vp-390 .sh-stage {
+    max-width: 390px; background: var(--background, #f6f6f6);
+    border: 10px solid #191a1c; border-radius: 28px;
+    padding: 16px 12px; height: min(844px, calc(100dvh - 52px));
+    overflow-y: auto; margin-top: 12px;
+  }
+  .sh-vp-768 .sh-stage {
+    max-width: 768px; border: 1px solid #c4c4c4; border-radius: 12px;
+    padding: 16px; margin-top: 12px;
+  }
+
+  /* placeholders */
+  .wf-pic  { border-radius: 4px; background:
+             repeating-linear-gradient(45deg, #e9e9e9, #e9e9e9 6px, #f2f2f2 6px, #f2f2f2 12px) }
+
+  /* ══════════════════════════ product styles ══════════════════════════ */
+
+  .sh-stage { max-width: 1800px; }
+
+  /* 헤더·필터바는 화면 위에 고정되어, 목록을 스크롤해도 조건을 계속 바꿀 수 있다. */
+  .app-header-wrap {
+    position: sticky; top: 0; z-index: 20; background: var(--background);
+    padding-bottom: 4px; display: flex; flex-direction: column; gap: 12px;
+  }
+
+  .app-header { padding: 4px 0 0; }
+  .app-header h1 { margin: 0 0 2px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .app-header p { margin: 0; font-size: 13px; color: var(--muted-foreground); }
+
+  /* ── filter bar ── */
+  [data-component="FilterBar"] {
+    display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end;
+    padding: 14px 16px; background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; font-weight: 600; color: var(--muted-foreground); }
+  .field select, .field input[type="number"] {
+    height: 34px; border: 1px solid var(--input); border-radius: var(--radius-md);
+    background: var(--background); color: var(--foreground); padding: 0 9px;
+    font: inherit; font-size: 13px; min-width: 92px;
+  }
+  .field input[type="number"] { width: 68px; min-width: 0; }
+  .field-dives { flex-direction: row; align-items: center; gap: 8px; }
+  .field-dives .hint { font-size: 11px; color: var(--muted-foreground); }
+  .stepper { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--input); border-radius: var(--radius-md); overflow: hidden; }
+  .stepper button {
+    width: 26px; height: 32px; border: none; background: var(--secondary); color: var(--foreground);
+    font-size: 14px; cursor: pointer; line-height: 1;
+  }
+  .stepper button:hover { background: var(--muted); }
+  .stepper input { width: 40px; text-align: center; border: none; border-left: 1px solid var(--input); border-right: 1px solid var(--input); height: 32px; font: inherit; font-size: 13px; }
+
+  .style-toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+  [data-component="Chip"] {
+    display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 11px;
+    border-radius: 999px; border: 1px solid var(--border); background: var(--background);
+    font-size: 12.5px; font-weight: 500; color: var(--foreground); cursor: pointer; user-select: none;
+  }
+  [data-component="Chip"][aria-pressed="true"] {
+    background: var(--primary); color: var(--primary-foreground); border-color: var(--primary);
+  }
+  .reason-text { font-size: 11.5px; color: var(--muted-foreground); line-height: 1.5; margin: 6px 0 0; }
+  .reason-text.poor { color: color-mix(in oklch, var(--destructive), var(--muted-foreground) 40%); }
+
+  /* ── country grouping (accordion) ── */
+  .list-section-title { font-size: 12px; font-weight: 700; color: var(--muted-foreground); margin: 4px 2px 8px; text-transform: uppercase; letter-spacing: .03em; }
+  .list-section-title.poor-title { margin-top: 18px; }
+  [data-component="CountryGroup"] { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); margin-bottom: 8px; overflow: hidden; }
+  .country-group-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px;
+    cursor: pointer; user-select: none; background: var(--secondary);
+  }
+  .country-group-head .cg-name { font-size: 13.5px; font-weight: 700; }
+  .country-group-head .cg-count { font-size: 11.5px; color: var(--muted-foreground); font-weight: 500; margin-left: 6px; }
+  .country-group-head .cg-chevron { font-size: 11px; color: var(--muted-foreground); transition: transform .12s; }
+  [data-component="CountryGroup"][data-collapsed="true"] .cg-chevron { transform: rotate(-90deg); }
+  .country-group-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+  [data-component="CountryGroup"][data-collapsed="true"] .country-group-body { display: none; }
+
+  /* ── main layout: 지도(좌)·목록(중)·상세(우) 3등분, 넓은 화면 기준 ── */
+  /* --sticky-top: 헤더·필터바 실제 높이 + 여백(실제 구현은 ResizeObserver로 실측). */
+  :root { --sticky-top: 148px; }
+  .explore-layout { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+  @media (min-width: 1024px) {
+    .explore-layout { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  [data-component="MapPanel"] {
+    border: 1px solid var(--border); border-radius: var(--radius-lg);
+    overflow: hidden; height: 280px; background:
+      linear-gradient(180deg, var(--map-water), var(--map-water));
+  }
+  @media (min-width: 1024px) {
+    [data-component="MapPanel"] {
+      position: sticky; top: var(--sticky-top);
+      height: calc(100vh - var(--sticky-top) - 1rem);
+    }
+  }
+  .map-landmass {
+    position: absolute; background: var(--map-land); border-radius: 40% 60% 55% 45% / 50% 45% 55% 50%;
+  }
+  .map-caption {
+    position: absolute; left: 10px; bottom: 10px; font-size: 11px; color: var(--muted-foreground);
+    background: color-mix(in oklch, var(--card), transparent 15%); padding: 3px 8px; border-radius: 999px;
+  }
+  .map-marker {
+    position: absolute; width: 26px; height: 26px; margin-left: -13px; margin-top: -26px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .map-marker .dot {
+    width: 20px; height: 20px; border-radius: 50% 50% 50% 0; transform: rotate(45deg);
+    border: 2px solid var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+  .map-marker[data-condition="optimal"] .dot { background: var(--optimal); }
+  .map-marker[data-condition="good"] .dot { background: var(--good); }
+  .map-marker[data-condition="poor"] .dot { background: var(--poor-bg); border-color: var(--muted-foreground); }
+  .map-marker.selected .dot { outline: 3px solid var(--ring); outline-offset: 1px; }
+  .map-marker .tip {
+    position: absolute; top: -8px; left: 50%; transform: translate(-50%, -100%);
+    background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 3px 8px; font-size: 11px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.1);
+    opacity: 0; pointer-events: none; transition: opacity .1s;
+  }
+  .map-marker:hover .tip { opacity: 1; }
+
+  [data-component="ResultList"] { display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
+  .result-count { font-size: 12px; color: var(--muted-foreground); margin: 0 0 2px 2px; }
+
+  [data-component="DestinationCard"] {
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card);
+    padding: 12px 12px 10px; cursor: pointer; transition: border-color .1s, box-shadow .1s;
+  }
+  [data-component="DestinationCard"]:hover { border-color: var(--ring); }
+  [data-component="DestinationCard"].selected { border-color: var(--foreground); box-shadow: 0 0 0 1px var(--foreground); }
+  [data-component="DestinationCard"].excluded { opacity: .5; }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .card-title { font-size: 14.5px; font-weight: 700; margin: 0; }
+  .card-sub { font-size: 12px; color: var(--muted-foreground); margin: 1px 0 0; }
+  [data-component="Badge"] {
+    display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  [data-component="Badge"][data-condition="optimal"] { background: var(--optimal-bg); color: color-mix(in oklch, var(--optimal), black 25%); }
+  [data-component="Badge"][data-condition="good"] { background: var(--good-bg); color: color-mix(in oklch, var(--good), black 35%); }
+  [data-component="Badge"][data-condition="poor"] { background: var(--poor-bg); color: var(--muted-foreground); }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+  .tag { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--secondary); color: var(--secondary-foreground); }
+  .card-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+  .card-price { font-size: 13.5px; font-weight: 700; }
+  .card-price .from { font-size: 10.5px; font-weight: 500; color: var(--muted-foreground); margin-right: 2px; }
+  .card-actions { display: flex; align-items: center; gap: 10px; }
+  .compare-check { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted-foreground); cursor: pointer; }
+  .maps-link { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; color: var(--muted-foreground); text-decoration: none; }
+  .maps-link:hover { color: var(--foreground); text-decoration: underline; }
+  .excluded-note { font-size: 11px; color: var(--destructive); margin-top: 6px; font-weight: 600; }
+
+  /* ── empty state ── */
+  [data-component="EmptyState"] {
+    grid-column: 1 / -1; text-align: center; padding: 60px 20px; border: 1px dashed var(--border);
+    border-radius: var(--radius-lg); color: var(--muted-foreground);
+  }
+  [data-component="EmptyState"] h3 { color: var(--foreground); margin: 10px 0 6px; font-size: 15px; }
+  [data-component="EmptyState"] p { margin: 0 0 14px; font-size: 13px; }
+
+  /* ── compare tray ── */
+  [data-component="CompareTray"] {
+    position: sticky; bottom: 12px; display: flex; align-items: center; gap: 10px;
+    margin-top: 14px; padding: 8px 10px 8px 14px; background: var(--popover); border: 1px solid var(--border);
+    border-radius: 999px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  }
+  [data-component="CompareTray"][hidden] { display: none; }
+  .tray-label { font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
+  .tray-chips { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+  .tray-chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px 0 10px; background: var(--secondary); border-radius: 999px; font-size: 12px; }
+  .tray-chip button { border: none; background: none; color: var(--muted-foreground); cursor: pointer; font-size: 13px; line-height: 1; padding: 2px; }
+
+  /* ── buttons (shadcn-like) ── */
+  [data-component="Button"] {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 34px; padding: 0 14px; border-radius: var(--radius-md); border: 1px solid transparent;
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
+  }
+  [data-component="Button"][data-variant="primary"] { background: var(--primary); color: var(--primary-foreground); }
+  [data-component="Button"][data-variant="primary"]:disabled { opacity: .45; cursor: not-allowed; }
+  [data-component="Button"][data-variant="outline"] { background: var(--background); border-color: var(--border); color: var(--foreground); }
+  [data-component="Button"][data-variant="ghost"] { background: none; color: var(--muted-foreground); }
+  [data-component="Button"][data-variant="ghost"]:hover { background: var(--muted); }
+
+  /* ── detail column: 지도·목록과 나란한 세 번째 칸. 넓은 화면에서 목록만큼 늘어나 sticky로 붙는다 ── */
+  [data-component="DetailPanel"] { display: block; }
+  @media (min-width: 1024px) {
+    [data-component="DetailPanel"] { position: sticky; top: var(--sticky-top); }
+  }
+  .panel-sheet {
+    background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    overflow-y: auto; padding: 16px;
+  }
+  @media (min-width: 1024px) {
+    .panel-sheet { max-height: calc(100vh - var(--sticky-top) - 0.75rem); }
+  }
+  [data-component="DetailPlaceholder"] {
+    display: flex; min-height: 240px; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; color: var(--muted-foreground);
+    border: 1px dashed var(--border); border-radius: var(--radius-lg); padding: 24px; font-size: 13px;
+  }
+  .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 4px; }
+  .panel-head h2 { margin: 0; font-size: 17px; font-weight: 700; }
+  .panel-close { border: none; background: var(--secondary); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 14px; color: var(--foreground); flex: none; }
+  .panel-sub { font-size: 12.5px; color: var(--muted-foreground); margin: 2px 0 14px; }
+
+  .dive-count-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--muted); border-radius: var(--radius-md); margin-bottom: 14px; }
+  .dive-count-row .label { font-size: 12.5px; }
+  .dive-count-row .label .sub { display: block; font-size: 11px; color: var(--muted-foreground); margin-top: 1px; }
+
+  .quote-section { margin-bottom: 16px; }
+  .quote-section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted-foreground); margin: 0 0 8px; }
+  .quote-line { display: flex; justify-content: space-between; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .quote-line:last-child { border-bottom: none; }
+  .quote-line .qname { display: flex; flex-direction: column; }
+  .quote-line .qname .qnote { font-size: 11px; color: var(--muted-foreground); margin-top: 1px; }
+  .quote-line .qval { font-weight: 600; white-space: nowrap; }
+  .discount-tier { font-size: 11px; color: color-mix(in oklch, var(--optimal), black 25%); background: var(--optimal-bg); display: inline-block; padding: 1px 7px; border-radius: 999px; margin-top: 3px; }
+  .price-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0 4px; }
+  .price-table th, .price-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .price-table thead th { color: var(--muted-foreground); font-weight: 600; font-size: 11px; }
+  .price-table tbody tr.applied { background: var(--optimal-bg); }
+  .price-table tbody tr.applied td:first-child { font-weight: 700; }
+  .price-table td.applied-mark { color: color-mix(in oklch, var(--optimal), black 25%); font-weight: 700; font-size: 11px; }
+  .lodging-row { display: flex; flex-direction: column; gap: 6px; }
+  .lodging-item { display: flex; justify-content: space-between; font-size: 12.5px; padding: 6px 0; }
+  .lodging-item .name { color: var(--muted-foreground); }
+
+  .quote-total { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0 4px; margin-top: 4px; border-top: 2px solid var(--foreground); }
+  .quote-total .tlabel { font-size: 13px; font-weight: 600; }
+  .quote-total .tval { font-size: 19px; font-weight: 800; }
+  .quote-footnote { font-size: 11px; color: var(--muted-foreground); margin-top: 6px; line-height: 1.5; }
+
+  .no-liveaboard-note { font-size: 12px; color: var(--muted-foreground); padding: 8px 0; }
+  .quote-subtotal { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0 0; margin-top: 8px; border-top: 1px solid var(--border); font-size: 13px; }
+  .quote-subtotal .qname .qnote { font-size: 11px; color: var(--muted-foreground); margin-top: 1px; display: block; }
+  .quote-subtotal .qval { font-weight: 700; }
+
+  /* ── compare overlay ── */
+  [data-component="CompareOverlay"] { position: fixed; inset: 0; z-index: 600; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  [data-component="CompareOverlay"][hidden] { display: none; }
+  .compare-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.4); }
+  .compare-sheet {
+    position: relative; background: var(--popover); border-radius: var(--radius-lg); width: 100%; max-width: 920px;
+    max-height: 88vh; overflow: auto; padding: 20px 20px 24px; box-shadow: 0 24px 60px rgba(0,0,0,.25);
+  }
+  .compare-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .compare-head h2 { margin: 0; font-size: 17px; font-weight: 700; }
+  table.compare-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .compare-table th, .compare-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .compare-table thead th { font-size: 12px; color: var(--muted-foreground); font-weight: 600; border-bottom: 2px solid var(--border); }
+  .compare-table th[scope="row"] { font-weight: 600; color: var(--muted-foreground); white-space: nowrap; width: 110px; }
+  .compare-table td.dest-col { min-width: 180px; }
+  .compare-dest-name { font-weight: 700; font-size: 13.5px; }
+  .compare-excluded-badge { display: inline-block; margin-top: 4px; font-size: 10.5px; font-weight: 700; color: var(--destructive); background: color-mix(in oklch, var(--destructive), transparent 88%); padding: 2px 7px; border-radius: 999px; }
+  .compare-remove { border: none; background: none; color: var(--muted-foreground); cursor: pointer; font-size: 15px; float: right; }
+
+  @media (max-width: 640px) {
+    .compare-table { font-size: 11.5px; }
+  }
+
+  /* vp(m) 프리셋은 실제 창 폭이 아니라 .sh-stage 폭만 좁히므로, 1024px 기준 미디어쿼리 대신
+     프리셋 클래스로 좁은 화면(모바일/태블릿) 레이아웃을 직접 강제해 재현한다. */
+  .sh-vp-390 .explore-layout, .sh-vp-768 .explore-layout { grid-template-columns: 1fr !important; }
+  .sh-vp-390 [data-component="MapPanel"], .sh-vp-768 [data-component="MapPanel"] {
+    position: relative !important; top: auto !important; height: 260px !important;
+  }
+  .sh-vp-390 [data-component="DetailPanel"], .sh-vp-768 [data-component="DetailPanel"] {
+    position: static !important; top: auto !important;
+  }
+  .sh-vp-390 .panel-sheet, .sh-vp-768 .panel-sheet { max-height: none !important; }
+</style>
+
+<header class="sh-bar">
+  <b>proto</b>
+  <label class="sh-control"><span class="sh-control-label">screen</span><select id="sh-screen"></select></label>
+  <span class="sh-spacer"></span>
+  <label class="sh-control"><span class="sh-control-label">state</span><select id="sh-state"></select></label>
+  <button id="sh-vp">vp: full (m)</button>
+</header>
+
+<main class="sh-stage">
+  <section data-screen="explore" data-title="다이빙 여행 탐색" data-states="결과 없음">
+
+    <div class="app-header-wrap">
+      <div class="app-header">
+        <h1>Where2Dive</h1>
+        <p>월과 기간을 넣으면 그 시기에 다이빙하기 좋은 동남아 목적지와 예상 견적을 비교합니다.</p>
+      </div>
+
+      <div data-component="FilterBar">
+        <div class="field">
+          <label for="f-month">여행 월</label>
+          <select id="f-month"></select>
+        </div>
+        <div class="field">
+          <label for="f-days">여행 기간</label>
+          <select id="f-days">
+            <option value="3">3일</option>
+            <option value="4">4일</option>
+            <option value="5" selected>5일</option>
+            <option value="6">6일</option>
+            <option value="7">7일</option>
+            <option value="9">9일</option>
+            <option value="11">11일</option>
+          </select>
+        </div>
+        <div class="field field-dives">
+          <label>다이빙 횟수</label>
+          <span class="stepper">
+            <button type="button" id="dive-minus" aria-label="다이빙 횟수 줄이기">−</button>
+            <input type="text" id="dive-count" inputmode="numeric" value="9">
+            <button type="button" id="dive-plus" aria-label="다이빙 횟수 늘리기">+</button>
+          </span>
+          <span class="hint" id="dive-hint">기간 기준 자동 추정</span>
+        </div>
+        <div class="field">
+          <label for="f-region">지역</label>
+          <select id="f-region">
+            <option value="all">전체</option>
+            <option value="필리핀">필리핀</option>
+            <option value="태국">태국</option>
+            <option value="말레이시아">말레이시아</option>
+            <option value="인도네시아">인도네시아</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>다이빙 스타일</label>
+          <div class="style-toggles" id="style-toggles" role="group" aria-label="다이빙 스타일 필터">
+            <button type="button" class="chip-toggle" data-component="Chip" data-style="초급자" aria-pressed="false">초급자 추천</button>
+            <button type="button" class="chip-toggle" data-component="Chip" data-style="조류" aria-pressed="false">조류</button>
+            <button type="button" class="chip-toggle" data-component="Chip" data-style="드리프트" aria-pressed="false">드리프트</button>
+            <button type="button" class="chip-toggle" data-component="Chip" data-style="대물" aria-pressed="false">대물</button>
+            <button type="button" class="chip-toggle" data-component="Chip" data-style="매크로" aria-pressed="false">매크로</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="explore-layout" id="explore-layout">
+      <!-- 지도는 화면을 스크롤해도 왼쪽 칸에 계속 붙어 있는다. -->
+      <div data-component="MapPanel" id="map-panel">
+        <div class="map-landmass" style="left:8%; top:18%; width:34%; height:30%;"></div>
+        <div class="map-landmass" style="left:38%; top:44%; width:26%; height:34%;"></div>
+        <div class="map-landmass" style="left:58%; top:30%; width:30%; height:40%;"></div>
+        <div id="map-markers"></div>
+        <div class="map-caption">동남아 · 지도는 참고용 배치입니다</div>
+      </div>
+
+      <div>
+        <p class="result-count" id="result-count"></p>
+        <p class="list-section-title">추천 목적지</p>
+        <div data-component="ResultList" id="result-list"></div>
+        <p class="list-section-title poor-title" id="poor-title" hidden>이번 달 비추천 목적지</p>
+        <div data-component="ResultList" id="poor-list"></div>
+      </div>
+
+      <!-- 상세 견적은 오른쪽 칸에 계속 자리하고, 값만 선택에 따라 바뀐다. 선택 전엔 안내만 보인다. -->
+      <div data-component="DetailPanel" id="detail-panel">
+        <div class="panel-sheet" id="detail-sheet" hidden></div>
+        <div data-component="DetailPlaceholder" id="detail-placeholder">
+          <p>목적지를 선택하면<br>여기에 예상 견적이 표시됩니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <div data-component="EmptyState" id="empty-state" hidden>
+      <h3>조건에 맞는 목적지가 없습니다</h3>
+      <p>선택한 월·지역·다이빙 스타일 조합을 만족하는 동남아 목적지가 없습니다. 스타일 필터를 줄이거나 지역을 &ldquo;전체&rdquo;로 넓혀보세요.</p>
+      <button type="button" data-component="Button" data-variant="outline" id="empty-reset">필터 초기화</button>
+    </div>
+
+    <div data-component="CompareTray" id="compare-tray" hidden>
+      <span class="tray-label">비교함</span>
+      <div class="tray-chips" id="tray-chips"></div>
+      <button type="button" data-component="Button" data-variant="primary" id="compare-open" disabled>나란히 비교</button>
+    </div>
+
+    <!-- compare overlay: attached overlay for this screen -->
+    <div data-component="CompareOverlay" id="compare-overlay" hidden>
+      <div class="compare-scrim" id="compare-scrim"></div>
+      <div class="compare-sheet">
+        <div class="compare-head">
+          <h2>후보지 비교</h2>
+          <button type="button" data-component="Button" data-variant="ghost" id="compare-close">닫기</button>
+        </div>
+        <div id="compare-body"></div>
+      </div>
+    </div>
+
+  </section>
+</main>
+
+<script>
+  /* ══════════════════════════ data ══════════════════════════ */
+  const MONTH_NAMES = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+
+  // dive price bands: 4 fixed brackets, per-dive price in 만원. 매 목적지가 같은 브래킷 경계를 쓴다.
+  const DIVE_BANDS = [
+    { label: '1～2회', min: 1, max: 2 },
+    { label: '3～4회', min: 3, max: 4 },
+    { label: '5～9회', min: 5, max: 9 },
+    { label: '10회 이상', min: 10, max: Infinity },
+  ];
+
+  const DESTINATIONS = [
+    {
+      id: 'anilao', name: '아닐라오', country: '필리핀', region: '필리핀',
+      distanceKm: 2600, flight: { transfer: '직항', priceMin: 48, priceMax: 65, destinationAirport: '마닐라' },
+      localTransfer: '마닐라 공항에서 육로로 약 3시간',
+      localTransferShort: '육로 3시간',
+      styles: ['매크로', '초급자'],
+      condition: { optimal: [12,1,2,3,4], good: [5,6,7,8,9,10,11], poor: [] },
+      reason: {
+        optimal: '12～4월은 건기라 파도가 잔잔하고 시야가 좋아 매크로 생물을 관찰하기 좋습니다.',
+        good: '우기철이지만 만 지형이라 큰 영향은 적고, 다이빙 자체엔 무리가 없습니다.',
+      },
+      divePrices: [4.0, 3.5, 3.3, 3.0],
+      gear: 1.5,
+      liveaboard: null,
+      lodging: { shop: [3.0, 4.5], separate: [3.5, 7.0] },
+      maps: 'https://www.google.com/maps/search/anilao+dive+shop'
+    },
+    {
+      id: 'cebu-moalboal', name: '세부 · 모알보알', country: '필리핀', region: '필리핀',
+      distanceKm: 2700, flight: { transfer: '직항', priceMin: 55, priceMax: 75, destinationAirport: '세부' },
+      localTransfer: '세부 공항에서 모알보알까지 육로로 약 3～4시간',
+      localTransferShort: '육로 3～4시간',
+      styles: ['초급자', '매크로'],
+      condition: { optimal: [12,1,2,3,4,5], good: [6,7,8,9,10,11], poor: [] },
+      reason: {
+        optimal: '12～5월 건기에는 정어리떼 활동이 활발하고 시야가 20m 이상으로 좋습니다.',
+        good: '우기에도 다이빙은 가능하지만 비가 잦아 시야가 다소 흐려질 수 있습니다.',
+      },
+      divePrices: [4.5, 4.0, 3.8, 3.5],
+      gear: 1.5,
+      liveaboard: null,
+      lodging: { shop: [3.5, 5.0], separate: [4.0, 9.0] },
+      maps: 'https://www.google.com/maps/search/moalboal+dive+shop'
+    },
+    {
+      id: 'bohol', name: '보홀 · 발리카삭', country: '필리핀', region: '필리핀',
+      distanceKm: 2750, flight: { transfer: '직항', priceMin: 55, priceMax: 78, destinationAirport: '보홀' },
+      localTransfer: '보홀 공항에서 다이빙샵까지 육로 약 1시간, 발리카삭 섬까지 보트로 15～20분 추가',
+      localTransferShort: '육로 1시간+보트 20분',
+      styles: ['대물', '드리프트', '초급자'],
+      condition: { optimal: [12,1,2,3,4,5], good: [6,7,8,9,10,11], poor: [] },
+      reason: {
+        optimal: '12～5월 건기에는 발리카삭 드롭오프의 시야가 가장 좋고 바다거북 조우율이 높습니다.',
+        good: '우기엔 조류가 다소 강해질 수 있으나 드리프트 다이빙 자체는 가능합니다.',
+      },
+      divePrices: [4.2, 3.7, 3.5, 3.3],
+      gear: 1.5,
+      liveaboard: null,
+      lodging: { shop: [3.2, 4.8], separate: [3.8, 8.0] },
+      maps: 'https://www.google.com/maps/search/balicasag+dive+shop'
+    },
+    {
+      id: 'koh-tao', name: '코타오', country: '태국', region: '태국',
+      distanceKm: 3700, flight: { transfer: '경유', priceMin: 50, priceMax: 70, transferAirport: '방콕', destinationAirport: '코사무이' },
+      localTransfer: '코사무이 공항에서 코타오까지 페리로 약 1.5～2시간',
+      localTransferShort: '페리 1.5～2시간',
+      styles: ['초급자', '매크로'],
+      condition: { optimal: [3,4,5,6,7,8,9], good: [12,1,2], poor: [10,11] },
+      reason: {
+        optimal: '건기(3～9월)엔 수온이 따뜻하고 파도가 잔잔해 초급자 교육·펀다이빙 모두 적합합니다.',
+        good: '12～2월은 선선하지만 다이빙 컨디션 자체엔 큰 무리가 없습니다.',
+        poor: '10～11월은 몬순 영향으로 시야가 크게 나빠지고 파도가 거세집니다.',
+      },
+      divePrices: [3.8, 3.33, 3.1, 2.9],
+      gear: 1.2,
+      liveaboard: null,
+      lodging: { shop: [2.5, 4.0], separate: [3.0, 6.0] },
+      maps: 'https://www.google.com/maps/search/koh+tao+dive+shop'
+    },
+    {
+      id: 'phi-phi', name: '피피 · 코란타', country: '태국', region: '태국',
+      distanceKm: 3750, flight: { transfer: '경유', priceMin: 48, priceMax: 68, transferAirport: '방콕', destinationAirport: '끄라비' },
+      localTransfer: '끄라비 공항에서 항구까지 육로 약 30분, 피피섬까지 스피드보트로 약 1.5시간',
+      localTransferShort: '육로+보트 2시간',
+      styles: ['초급자', '대물'],
+      condition: { optimal: [11,12,1,2,3,4], good: [5,10], poor: [6,7,8,9] },
+      reason: {
+        optimal: '건기(11～4월)엔 마야베이와 리차드슨록 시야가 좋고 레오파드샤크 조우율이 높습니다.',
+        good: '환절기라 파도가 다소 있지만 다이빙은 무리 없이 가능합니다.',
+        poor: '우기(6～9월) 몬순으로 스웰이 강해지고 시야가 크게 줄어듭니다.',
+      },
+      divePrices: [3.6, 3.2, 3.0, 2.8],
+      gear: 1.2,
+      liveaboard: null,
+      lodging: { shop: [2.8, 4.2], separate: [3.2, 6.5] },
+      maps: 'https://www.google.com/maps/search/phi+phi+dive+shop'
+    },
+    {
+      id: 'similan', name: '시밀란 제도', country: '태국', region: '태국',
+      distanceKm: 3900, flight: { transfer: '경유', priceMin: 55, priceMax: 80, transferAirport: '방콕', destinationAirport: '푸켓' },
+      localTransfer: '푸켓 공항에서 승선지(카오락)까지 육로 약 1.5시간, 시밀란 해상까지 보트로 약 1～2시간',
+      localTransferShort: '육로+보트 3시간',
+      styles: ['대물', '드리프트', '조류'],
+      condition: { optimal: [12,1,2,3], good: [11,4], poor: [5,6,7,8,9,10] },
+      reason: {
+        optimal: '국립공원 개장 시즌(11～4월) 중에서도 12～3월은 리브어보드 운항이 가장 활발합니다.',
+        good: '개장 초반·막바지라 리브어보드 선택지가 다소 줄어듭니다.',
+        poor: '5～10월은 국립공원이 폐쇄되어 다이빙 자체가 불가능합니다.',
+      },
+      divePrices: [7.0, 6.33, 5.8, 5.5],
+      gear: 2.0,
+      liveaboard: { months: [11,12,1,2,3,4], priceMin: 22, priceMax: 35 },
+      lodging: { shop: [5.0, 8.0], separate: [6.0, 12.0] },
+      maps: 'https://www.google.com/maps/search/similan+liveaboard'
+    },
+    {
+      id: 'sipadan', name: '시파단 · 마부', country: '말레이시아', region: '말레이시아',
+      distanceKm: 4200, flight: { transfer: '경유', priceMin: 65, priceMax: 95, transferAirport: '코타키나발루', destinationAirport: '타와우' },
+      localTransfer: '타와우 공항에서 셈포르나까지 육로 약 1.5시간, 마부·시파단까지 보트로 약 30～45분',
+      localTransferShort: '육로+보트 2시간',
+      styles: ['대물', '드리프트', '조류'],
+      condition: { optimal: [4,5,6,7,8,9], good: [10,11,12,1,2,3], poor: [] },
+      reason: {
+        optimal: '건기(4～9월)엔 조류가 예측 가능한 수준이라 바라쿠다 토네이도 조우율이 높습니다.',
+        good: '우기철엔 조류가 거세지고 시야가 다소 줄어들 수 있습니다.',
+      },
+      divePrices: [6.0, 5.5, 5.2, 4.9],
+      gear: 2.0,
+      liveaboard: { months: [4,5,6,7,8,9,10], priceMin: 18, priceMax: 28 },
+      lodging: { shop: [6.0, 9.0], separate: [7.0, 15.0] },
+      maps: 'https://www.google.com/maps/search/sipadan+mabul+dive'
+    },
+    {
+      id: 'layang-layang', name: '라양라양', country: '말레이시아', region: '말레이시아',
+      distanceKm: 4400, flight: { transfer: '경유', priceMin: 78, priceMax: 110, transferAirport: '코타키나발루', destinationAirport: '라양라양' },
+      localTransfer: '공항이 섬 안에 있어 도착 후 리조트까지 도보로 이동',
+      localTransferShort: '도보 이동',
+      styles: ['대물', '드리프트'],
+      condition: { optimal: [3,4,5,6], good: [7,8,9,10], poor: [11,12,1,2] },
+      reason: {
+        optimal: '해머헤드 시즌(3～6월)엔 새벽 드롭오프 다이빙에서 조우율이 가장 높습니다.',
+        good: '시즌 외엔 대물 조우가 줄지만 절벽 드롭오프 다이빙 자체는 가능합니다.',
+        poor: '몬순 시즌(11～2월)은 파도가 높아 리조트가 사실상 휴업합니다.',
+      },
+      divePrices: [8.5, 7.7, 7.2, 6.8],
+      gear: 2.2,
+      liveaboard: null,
+      lodging: { shop: [8.0, 14.0], separate: [9.0, 16.0] },
+      maps: 'https://www.google.com/maps/search/layang+layang+resort'
+    },
+    {
+      id: 'lembeh', name: '렘베 · 방카섬', country: '인도네시아', region: '인도네시아',
+      distanceKm: 4700, flight: { transfer: '경유', priceMin: 75, priceMax: 105, transferAirport: '자카르타', destinationAirport: '마나도' },
+      localTransfer: '마나도 공항에서 렘베 해협 리조트까지 육로로 약 1시간',
+      localTransferShort: '육로 1시간',
+      styles: ['매크로', '초급자'],
+      condition: { optimal: [4,5,6,7,8,9,10,11], good: [12,1,2,3], poor: [] },
+      reason: {
+        optimal: '건기(4～11월)엔 머드다이빙 시야가 안정적이라 희귀 매크로 생물 관찰에 좋습니다.',
+        good: '우기엔 빗물 유입으로 부유물이 늘어 시야가 다소 줄어듭니다.',
+      },
+      divePrices: [5.5, 5.0, 4.7, 4.4],
+      gear: 1.8,
+      liveaboard: null,
+      lodging: { shop: [5.5, 9.0], separate: [5.0, 10.0] },
+      maps: 'https://www.google.com/maps/search/lembeh+dive+resort'
+    },
+    {
+      id: 'nusa-penida', name: '누사페니다', country: '인도네시아', region: '인도네시아',
+      distanceKm: 5300, flight: { transfer: '직항', priceMin: 60, priceMax: 85, destinationAirport: '발리' },
+      localTransfer: '발리 공항에서 사누르 항까지 육로 약 1시간, 누사페니다까지 스피드보트로 약 30～45분',
+      localTransferShort: '육로+보트 1.5시간',
+      styles: ['대물', '조류', '초급자'],
+      condition: { optimal: [7,8,9,10], good: [11,12,1,2,3,4,5,6], poor: [] },
+      reason: {
+        optimal: '몰라몰라 시즌(7～10월)엔 한류가 유입돼 개복치 조우율이 크게 높아집니다.',
+        good: '그 외 기간은 몰라몰라 대신 만타포인트 위주로 다이빙하게 됩니다.',
+      },
+      divePrices: [5.0, 4.5, 4.2, 3.9],
+      gear: 1.6,
+      liveaboard: null,
+      lodging: { shop: [4.5, 7.0], separate: [4.0, 9.0] },
+      maps: 'https://www.google.com/maps/search/nusa+penida+dive+shop'
+    },
+    {
+      id: 'komodo', name: '코모도', country: '인도네시아', region: '인도네시아',
+      distanceKm: 5700, flight: { transfer: '경유', priceMin: 80, priceMax: 115, transferAirport: '발리(덴파사르)', destinationAirport: '라부안바조' },
+      localTransfer: '라부안바조 공항에서 항구까지 육로 약 15～20분, 리브어보드는 항구에서 승선',
+      localTransferShort: '육로 20분',
+      styles: ['대물', '드리프트', '조류'],
+      condition: { optimal: [4,5,6,7,8,9,10,11], good: [12,1,2,3], poor: [] },
+      reason: {
+        optimal: '건기(4～11월)엔 코모도 남부 조류 다이빙 컨디션이 안정적이고 만타 조우율이 높습니다.',
+        good: '우기엔 스웰이 커지고 포인트 간 이동이 다소 불편해집니다.',
+      },
+      divePrices: [7.5, 6.67, 6.2, 5.8],
+      gear: 2.0,
+      liveaboard: { months: [1,2,3,4,5,6,7,8,9,10,11,12], priceMin: 28, priceMax: 45 },
+      lodging: { shop: [7.0, 12.0], separate: [6.0, 15.0] },
+      maps: 'https://www.google.com/maps/search/komodo+liveaboard'
+    },
+    {
+      id: 'raja-ampat', name: '라자암팟', country: '인도네시아', region: '인도네시아',
+      distanceKm: 6300, flight: { transfer: '경유', priceMin: 95, priceMax: 140, transferAirport: '자카르타', destinationAirport: '소롱' },
+      localTransfer: '소롱 항에서 와이삭까지 페리로 약 2～4시간, 이후 리조트까지 보트로 추가 이동',
+      localTransferShort: '페리 2～4시간+',
+      styles: ['대물', '매크로', '조류'],
+      condition: { optimal: [10,11,12,1,2,3,4], good: [5,6,7,8,9], poor: [] },
+      reason: {
+        optimal: '건기(10～4월)엔 시야가 가장 좋고 세계 최고 수준의 생물다양성을 관찰할 수 있습니다.',
+        good: '남동 몬순 시즌(5～9월)은 조류가 강해지지만 다이빙 자체는 충분히 가능합니다.',
+      },
+      divePrices: [9.0, 8.0, 7.5, 7.0],
+      gear: 2.5,
+      liveaboard: { months: [1,2,3,4,5,6,7,8,9,10,11,12], priceMin: 35, priceMax: 60 },
+      lodging: { shop: [10.0, 18.0], separate: [8.0, 20.0] },
+      maps: 'https://www.google.com/maps/search/raja+ampat+liveaboard'
+    },
+  ];
+
+  const ALL_STYLES = ['초급자', '조류', '드리프트', '대물', '매크로'];
+  const REFERENCE_DATE = '2026년 7월';
+
+  /* ══════════════════════════ state ══════════════════════════ */
+  const state = {
+    month: 8,
+    days: 5,
+    dives: 9,
+    diveManuallySet: false,
+    region: 'all',
+    styles: new Set(),
+    compare: new Set(),
+    selectedId: null,
+  };
+
+  function estimateDives(days) {
+    return Math.max(0, (days - 2)) * 3;
+  }
+
+  function condition(dest, month) {
+    if (dest.condition.optimal.includes(month)) return 'optimal';
+    if (dest.condition.good.includes(month)) return 'good';
+    return 'poor';
+  }
+  const CONDITION_LABEL = { optimal: '최적', good: '양호', poor: '비추천' };
+
+  function conditionReason(dest, month) {
+    const cond = condition(dest, month);
+    return dest.reason[cond] || dest.reason.good || dest.reason.optimal;
+  }
+
+  function matchesFilters(dest, region, styles) {
+    if (region !== 'all' && dest.region !== region) return false;
+    if (styles.size > 0) {
+      for (const s of styles) if (!dest.styles.includes(s)) return false;
+    }
+    return true;
+  }
+
+  function bandIndexForDives(dives) {
+    let idx = 0;
+    DIVE_BANDS.forEach((band, i) => { if (dives >= band.min) idx = i; });
+    return dives > 0 ? idx : -1;
+  }
+
+  function diveUnitPrice(dest, dives) {
+    const idx = bandIndexForDives(dives);
+    if (idx < 0) return { per: dest.divePrices[0], bandIndex: -1 };
+    return { per: dest.divePrices[idx], bandIndex: idx };
+  }
+
+  function estimateTotal(dest, dives) {
+    const { per } = diveUnitPrice(dest, dives);
+    const diveCost = per * dives;
+    const gearCost = dest.gear * Math.ceil(dives / 3);
+    const flightAvg = (dest.flight.priceMin + dest.flight.priceMax) / 2;
+    const lodgeAvg = (dest.lodging.shop[0] + dest.lodging.shop[1]) / 2;
+    const nights = Math.max(1, state.days - 1);
+    return diveCost + gearCost + flightAvg + lodgeAvg * nights;
+  }
+
+  function flightRouteLabel(d) {
+    if (d.flight.transfer === '직항') return `인천 → ${d.flight.destinationAirport} 직항`;
+    return `인천 → ${d.flight.transferAirport} 경유 → ${d.flight.destinationAirport}`;
+  }
+
+  function fmtMan(v) { return Math.round(v).toLocaleString('ko-KR') + '만원'; }
+  function fmtRange(min, max) { return `${min.toLocaleString('ko-KR')}～${max.toLocaleString('ko-KR')}만원`; }
+
+  /* ══════════════════════════ render: filter bar ══════════════════════════ */
+  const monthSelect = document.getElementById('f-month');
+  MONTH_NAMES.forEach((label, i) => {
+    const opt = document.createElement('option');
+    opt.value = i + 1; opt.textContent = label;
+    if (i + 1 === state.month) opt.selected = true;
+    monthSelect.append(opt);
+  });
+  monthSelect.onchange = () => { state.month = Number(monthSelect.value); closeDetail(); render(); };
+
+  document.getElementById('f-days').onchange = (e) => {
+    state.days = Number(e.target.value);
+    if (!state.diveManuallySet) {
+      state.dives = estimateDives(state.days);
+      diveCountInput.value = state.dives;
+    }
+    closeDetail(); render();
+  };
+
+  const diveCountInput = document.getElementById('dive-count');
+  const diveHint = document.getElementById('dive-hint');
+  function setDives(n) {
+    state.dives = Math.max(0, n);
+    state.diveManuallySet = true;
+    diveCountInput.value = state.dives;
+    diveHint.textContent = '직접 조정함';
+    renderDetailIfOpen();
+    render();
+  }
+  document.getElementById('dive-minus').onclick = () => setDives(state.dives - 1);
+  document.getElementById('dive-plus').onclick = () => setDives(state.dives + 1);
+  diveCountInput.onchange = () => setDives(Number(diveCountInput.value) || 0);
+
+  document.getElementById('f-region').onchange = (e) => { state.region = e.target.value; closeDetail(); render(); };
+
+  document.querySelectorAll('.chip-toggle').forEach(chip => {
+    chip.onclick = () => {
+      const s = chip.dataset.style;
+      if (state.styles.has(s)) { state.styles.delete(s); chip.setAttribute('aria-pressed', 'false'); }
+      else { state.styles.add(s); chip.setAttribute('aria-pressed', 'true'); }
+      closeDetail(); render();
+    };
+  });
+
+  document.getElementById('empty-reset').onclick = () => {
+    state.region = 'all'; document.getElementById('f-region').value = 'all';
+    state.styles.clear();
+    document.querySelectorAll('.chip-toggle').forEach(c => c.setAttribute('aria-pressed', 'false'));
+    render();
+  };
+
+  /* ══════════════════════════ render: map + list ══════════════════════════ */
+  const MAP_POS = {
+    'anilao': [22, 24], 'cebu-moalboal': [30, 34], 'bohol': [33, 37], 'koh-tao': [12, 52],
+    'phi-phi': [9, 57], 'similan': [7, 61], 'sipadan': [46, 40], 'layang-layang': [50, 21],
+    'lembeh': [58, 29], 'nusa-penida': [61, 51], 'komodo': [67, 47], 'raja-ampat': [83, 33],
+  };
+  const collapsedCountries = new Set();
+
+  function render() {
+    const month = state.month, region = state.region, styles = state.styles;
+    const matched = DESTINATIONS.filter(d => matchesFilters(d, region, styles))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+    const recommended = matched.filter(d => condition(d, month) !== 'poor');
+    const notRecommended = matched.filter(d => condition(d, month) === 'poor');
+
+    const layout = document.getElementById('explore-layout');
+    const emptyState = document.getElementById('empty-state');
+    const resultCount = document.getElementById('result-count');
+
+    if (matched.length === 0) {
+      layout.hidden = true;
+      emptyState.hidden = false;
+      resultCount.textContent = '';
+    } else {
+      layout.hidden = false;
+      emptyState.hidden = true;
+      resultCount.textContent = `${MONTH_NAMES[month-1]} 기준 추천 ${recommended.length}곳 · 비추천 ${notRecommended.length}곳 · 인천에서 가까운 순`;
+    }
+
+    renderMap(matched, month);
+    renderCardGroups('result-list', recommended, month);
+    const poorTitle = document.getElementById('poor-title');
+    poorTitle.hidden = notRecommended.length === 0;
+    renderCardGroups('poor-list', notRecommended, month);
+    if (!document.getElementById('compare-overlay').hidden) renderCompareBody();
+  }
+
+  function renderMap(visible, month) {
+    const wrap = document.getElementById('map-markers');
+    wrap.innerHTML = '';
+    visible.forEach(d => {
+      const pos = MAP_POS[d.id];
+      const el = document.createElement('div');
+      el.className = 'map-marker' + (state.selectedId === d.id ? ' selected' : '');
+      el.dataset.condition = condition(d, month);
+      el.style.left = pos[0] + '%';
+      el.style.top = pos[1] + '%';
+      el.innerHTML = `<div class="dot"></div><div class="tip">${d.name}</div>`;
+      el.onclick = () => openDetail(d.id);
+      wrap.append(el);
+    });
+  }
+
+  function renderCardGroups(containerId, list, month) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    const byCountry = new Map();
+    list.forEach(d => {
+      if (!byCountry.has(d.country)) byCountry.set(d.country, []);
+      byCountry.get(d.country).push(d);
+    });
+    byCountry.forEach((dests, country) => {
+      const group = document.createElement('div');
+      group.setAttribute('data-component', 'CountryGroup');
+      const collapseKey = containerId + ':' + country;
+      const collapsed = collapsedCountries.has(collapseKey);
+      group.dataset.collapsed = String(collapsed);
+      const head = document.createElement('div');
+      head.className = 'country-group-head';
+      head.innerHTML = `<span><span class="cg-name">${country}</span><span class="cg-count">${dests.length}곳</span></span><span class="cg-chevron">▾</span>`;
+      head.onclick = () => {
+        if (collapsedCountries.has(collapseKey)) collapsedCountries.delete(collapseKey);
+        else collapsedCountries.add(collapseKey);
+        group.dataset.collapsed = String(collapsedCountries.has(collapseKey));
+      };
+      const body = document.createElement('div');
+      body.className = 'country-group-body';
+      dests.forEach(d => body.append(renderCard(d, month)));
+      group.append(head, body);
+      container.append(group);
+    });
+  }
+
+  function renderCard(d, month) {
+    const cond = condition(d, month);
+    const total = estimateTotal(d, state.dives);
+    const card = document.createElement('div');
+    card.setAttribute('data-component', 'DestinationCard');
+    if (state.selectedId === d.id) card.classList.add('selected');
+    card.innerHTML = `
+      <div class="card-top">
+        <div>
+          <p class="card-title">${d.name}</p>
+          <p class="card-sub">${d.country} · ${flightRouteLabel(d)}</p>
+          <p class="card-sub">공항 도착 후 ${d.localTransferShort}</p>
+        </div>
+        <span data-component="Badge" data-condition="${cond}">${CONDITION_LABEL[cond]}</span>
+      </div>
+      <div class="card-tags">${d.styles.map(s => `<span class="tag">${s}</span>`).join('')}</div>
+      <p class="reason-text${cond === 'poor' ? ' poor' : ''}">${conditionReason(d, month)}</p>
+      <div class="card-bottom">
+        <div class="card-price"><span class="from">예상 총액</span>약 ${fmtMan(total)}</div>
+        <div class="card-actions">
+          <label class="compare-check" onclick="event.stopPropagation()">
+            <input type="checkbox" data-compare="${d.id}" ${state.compare.has(d.id) ? 'checked' : ''}> 비교
+          </label>
+          <a class="maps-link" href="${d.maps}" target="_blank" rel="noopener" onclick="event.stopPropagation()">지도 ↗</a>
+        </div>
+      </div>
+    `;
+    card.onclick = () => openDetail(d.id);
+    card.querySelector('[data-compare]').onchange = (e) => toggleCompare(d.id, e.target.checked);
+    return card;
+  }
+
+  /* ══════════════════════════ compare tray ══════════════════════════ */
+  function toggleCompare(id, checked) {
+    if (checked) state.compare.add(id); else state.compare.delete(id);
+    renderTray();
+  }
+
+  function renderTray() {
+    const tray = document.getElementById('compare-tray');
+    const chips = document.getElementById('tray-chips');
+    const openBtn = document.getElementById('compare-open');
+    if (state.compare.size === 0) { tray.hidden = true; return; }
+    tray.hidden = false;
+    chips.innerHTML = '';
+    [...state.compare].forEach(id => {
+      const d = DESTINATIONS.find(x => x.id === id);
+      const chip = document.createElement('span');
+      chip.className = 'tray-chip';
+      chip.innerHTML = `${d.name} <button type="button" aria-label="비교함에서 빼기">×</button>`;
+      chip.querySelector('button').onclick = () => {
+        state.compare.delete(id);
+        const cb = document.querySelector(`[data-compare="${id}"]`);
+        if (cb) cb.checked = false;
+        renderTray();
+        if (state.compare.size < 2) closeCompare();
+        else renderCompareBody();
+      };
+      chips.append(chip);
+    });
+    openBtn.disabled = state.compare.size < 2;
+  }
+
+  document.getElementById('compare-open').onclick = () => openCompare();
+
+  /* ══════════════════════════ detail panel (지도·목록과 나란한 세 번째 칸) ══════════════════════════ */
+  function openDetail(id) {
+    const already = state.selectedId === id;
+    state.selectedId = already ? null : id;
+    render();
+    if (state.selectedId) renderDetail(state.selectedId);
+    document.getElementById('detail-sheet').hidden = !state.selectedId;
+    document.getElementById('detail-placeholder').hidden = !!state.selectedId;
+  }
+  function closeDetail() {
+    state.selectedId = null;
+    document.getElementById('detail-sheet').hidden = true;
+    document.getElementById('detail-placeholder').hidden = false;
+  }
+
+  function renderDetailIfOpen() {
+    if (state.selectedId) renderDetail(state.selectedId);
+  }
+
+  function renderDetail(id) {
+    const d = DESTINATIONS.find(x => x.id === id);
+    const month = state.month;
+    const cond = condition(d, month);
+    const { per, bandIndex } = diveUnitPrice(d, state.dives);
+    const diveCost = per * state.dives;
+    const gearCost = d.gear * Math.ceil(state.dives / 3);
+    const nights = Math.max(1, state.days - 1);
+    const lodgeShopTotal = [d.lodging.shop[0]*nights, d.lodging.shop[1]*nights];
+    const lodgeSepTotal = [d.lodging.separate[0]*nights, d.lodging.separate[1]*nights];
+    const flightAvg = (d.flight.priceMin + d.flight.priceMax) / 2;
+    const totalLow = diveCost + gearCost + d.flight.priceMin + lodgeShopTotal[0];
+    const totalHigh = diveCost + gearCost + d.flight.priceMax + lodgeShopTotal[1];
+
+    const hasLiveaboard = d.liveaboard && d.liveaboard.months.includes(month);
+
+    const sheet = document.getElementById('detail-sheet');
+    sheet.innerHTML = `
+      <div class="panel-head">
+        <div>
+          <h2>${d.name}</h2>
+          <p class="panel-sub">${d.country} · <span data-component="Badge" data-condition="${cond}">${CONDITION_LABEL[cond]}</span> · ${MONTH_NAMES[month-1]} 기준</p>
+        </div>
+        <button type="button" class="panel-close" id="detail-close-x" aria-label="닫기">✕</button>
+      </div>
+      <p class="reason-text${cond === 'poor' ? ' poor' : ''}" style="margin-bottom:14px">${conditionReason(d, month)}</p>
+
+      <div class="dive-count-row">
+        <span class="label">다이빙 횟수<span class="sub">${state.diveManuallySet ? '직접 조정함' : state.days + '일 여행 기준 추정'}</span></span>
+        <span class="stepper">
+          <button type="button" id="detail-dive-minus">−</button>
+          <input type="text" id="detail-dive-count" value="${state.dives}" style="width:36px">
+          <button type="button" id="detail-dive-plus">+</button>
+        </span>
+      </div>
+
+      <div class="quote-section">
+        <h3>다이빙 비용 · 멀티다이브 할인</h3>
+        <table class="price-table">
+          <thead><tr><th>구간</th><th>1다이브 단가</th><th></th></tr></thead>
+          <tbody>
+            ${DIVE_BANDS.map((band, i) => `
+              <tr class="${i === bandIndex ? 'applied' : ''}">
+                <td>${band.label}</td>
+                <td>${d.divePrices[i]}만원</td>
+                <td class="applied-mark">${i === bandIndex ? '현재 적용' : ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="quote-line">
+          <div class="qname">펀다이빙 ${state.dives}회<span class="qnote">${bandIndex >= 0 ? `${DIVE_BANDS[bandIndex].label} 구간 · ${per}만원/다이브` : '다이빙 횟수 0회'}</span></div>
+          <div class="qval">${fmtMan(diveCost)}</div>
+        </div>
+        <div class="quote-line">
+          <div class="qname">장비 풀세트 대여<span class="qnote">1일 ${d.gear}만원 기준</span></div>
+          <div class="qval">${fmtMan(gearCost)}</div>
+        </div>
+      </div>
+
+      ${hasLiveaboard ? `
+      <div class="quote-section">
+        <h3>리브어보드</h3>
+        <div class="quote-line">
+          <div class="qname">선상 숙박 다이빙 패키지 (${nights}박)<span class="qnote">1박 ${fmtRange(d.liveaboard.priceMin, d.liveaboard.priceMax)}, ${MONTH_NAMES[month-1]} 운항</span></div>
+          <div class="qval">${fmtRange(Math.round(d.liveaboard.priceMin * nights), Math.round(d.liveaboard.priceMax * nights))}</div>
+        </div>
+        <div class="quote-subtotal">
+          <div class="qname">리브어보드 이용 시 예상 총액<span class="qnote">항공 + 리브어보드 패키지, 육상 다이빙과는 별도 여행</span></div>
+          <div class="qval">${fmtRange(Math.round(d.flight.priceMin + d.liveaboard.priceMin * nights), Math.round(d.flight.priceMax + d.liveaboard.priceMax * nights))}</div>
+        </div>
+      </div>` : d.liveaboard ? `
+      <div class="quote-section">
+        <h3>리브어보드</h3>
+        <p class="no-liveaboard-note">${MONTH_NAMES[month-1]}은 이 지역 리브어보드 운항 시즌이 아닙니다.</p>
+      </div>` : ''}
+
+      <div class="quote-section">
+        <h3>항공</h3>
+        <div class="quote-line">
+          <div class="qname">${flightRouteLabel(d)}<span class="qnote">왕복 기준</span></div>
+          <div class="qval">${fmtRange(d.flight.priceMin, d.flight.priceMax)}</div>
+        </div>
+        <p class="reason-text" style="margin-top:8px">공항 → 다이빙 지역: ${d.localTransfer}</p>
+      </div>
+
+      <div class="quote-section">
+        <h3>숙소 (${nights}박)</h3>
+        <div class="lodging-row">
+          <div class="lodging-item"><span class="name">다이빙샵 패키지 포함형</span><span class="qval">${fmtRange(Math.round(lodgeShopTotal[0]), Math.round(lodgeShopTotal[1]))}</span></div>
+          <div class="lodging-item"><span class="name">별도 숙박</span><span class="qval">${fmtRange(Math.round(lodgeSepTotal[0]), Math.round(lodgeSepTotal[1]))}</span></div>
+        </div>
+      </div>
+
+      <div class="quote-total">
+        <span class="tlabel">예상 총액 (숙소 패키지 기준)</span>
+        <span class="tval">${fmtRange(Math.round(totalLow), Math.round(totalHigh))}</span>
+      </div>
+      <p class="quote-footnote">${REFERENCE_DATE} 조사 기준 참고가입니다. 실제 예약 시 금액은 다를 수 있습니다. 예약은 각 다이빙샵·항공사·리브어보드 운영사에서 직접 진행해 주세요.</p>
+    `;
+    sheet.querySelector('#detail-close-x').onclick = closeDetail;
+    sheet.querySelector('#detail-dive-minus').onclick = () => setDives(state.dives - 1);
+    sheet.querySelector('#detail-dive-plus').onclick = () => setDives(state.dives + 1);
+    sheet.querySelector('#detail-dive-count').onchange = (e) => setDives(Number(e.target.value) || 0);
+  }
+
+  /* ══════════════════════════ compare overlay ══════════════════════════ */
+  function openCompare() {
+    renderCompareBody();
+    document.getElementById('compare-overlay').hidden = false;
+  }
+  function closeCompare() { document.getElementById('compare-overlay').hidden = true; }
+  document.getElementById('compare-scrim').onclick = closeCompare;
+  document.getElementById('compare-close').onclick = closeCompare;
+
+  function renderCompareBody() {
+    const month = state.month;
+    const ids = [...state.compare];
+    const dests = ids.map(id => DESTINATIONS.find(d => d.id === id));
+    const body = document.getElementById('compare-body');
+
+    const rows = [
+      { label: '컨디션', render: d => {
+        const cond = condition(d, month);
+        return `<span data-component="Badge" data-condition="${cond}">${CONDITION_LABEL[cond]}</span>`;
+      }},
+      { label: '스타일', render: d => d.styles.map(s => `<span class="tag">${s}</span>`).join(' ') },
+      { label: '다이빙 비용', render: d => { const {per} = diveUnitPrice(d, state.dives); return fmtMan(per * state.dives) + ` (${state.dives}회)`; } },
+      { label: '리브어보드', render: d => d.liveaboard ? (d.liveaboard.months.includes(month) ? fmtRange(d.liveaboard.priceMin, d.liveaboard.priceMax) : '이번 달 미운항') : '해당 없음' },
+      { label: '항공(왕복)', render: d => `${flightRouteLabel(d)}<br><span style="color:var(--muted-foreground)">${fmtRange(d.flight.priceMin, d.flight.priceMax)}</span>` },
+      { label: '숙소(패키지)', render: d => { const n = Math.max(1, state.days-1); return fmtRange(Math.round(d.lodging.shop[0]*n), Math.round(d.lodging.shop[1]*n)); } },
+      { label: '예상 총액', render: d => '약 ' + fmtMan(estimateTotal(d, state.dives)), strong: true },
+    ];
+
+    let html = '<div style="overflow-x:auto"><table class="compare-table"><thead><tr><th></th>';
+    dests.forEach(d => {
+      const passesFilter = matchesFilters(d, state.region, state.styles);
+      const isPoor = condition(d, month) === 'poor';
+      let badge = '';
+      if (!passesFilter) badge = '<span class="compare-excluded-badge">현재 조건에서 후보 아님</span>';
+      else if (isPoor) badge = '<span class="compare-excluded-badge">이번 달 비추천</span>';
+      html += `<th class="dest-col">
+        <button type="button" class="compare-remove" data-remove="${d.id}" aria-label="비교에서 빼기">×</button>
+        <div class="compare-dest-name">${d.name}</div>
+        <div style="font-size:11px;color:var(--muted-foreground)">${d.country}</div>
+        ${badge}
+      </th>`;
+    });
+    html += '</tr></thead><tbody>';
+    rows.forEach(row => {
+      html += `<tr><th scope="row">${row.label}</th>`;
+      dests.forEach(d => {
+        html += `<td${row.strong ? ' style="font-weight:700"' : ''}>${row.render(d)}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    body.innerHTML = html;
+
+    body.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.onclick = () => {
+        const id = btn.dataset.remove;
+        state.compare.delete(id);
+        const cb = document.querySelector(`[data-compare="${id}"]`);
+        if (cb) cb.checked = false;
+        renderTray();
+        if (state.compare.size < 2) closeCompare(); else renderCompareBody();
+      };
+    });
+  }
+
+  /* ══════════════════════════ empty-state preset wiring ══════════════════════════ */
+  const explorerSection = document.querySelector('[data-screen="explore"]');
+  const emptyStateSnapshot = {};
+  function enterEmptyPreset() {
+    emptyStateSnapshot.month = state.month;
+    emptyStateSnapshot.region = state.region;
+    emptyStateSnapshot.styles = new Set(state.styles);
+    state.month = 7; state.region = '태국';
+    state.styles = new Set(['매크로', '대물', '드리프트']);
+    document.getElementById('f-region').value = '태국';
+    monthSelect.value = 7;
+    document.querySelectorAll('.chip-toggle').forEach(c => {
+      const on = ['매크로','대물','드리프트'].includes(c.dataset.style);
+      c.setAttribute('aria-pressed', String(on));
+    });
+    render();
+  }
+  function exitEmptyPreset() {
+    if (emptyStateSnapshot.month === undefined) return;
+    state.month = emptyStateSnapshot.month;
+    state.region = emptyStateSnapshot.region;
+    state.styles = emptyStateSnapshot.styles;
+    document.getElementById('f-region').value = state.region;
+    monthSelect.value = state.month;
+    document.querySelectorAll('.chip-toggle').forEach(c => {
+      c.setAttribute('aria-pressed', String(state.styles.has(c.dataset.style)));
+    });
+    render();
+  }
+
+  /* ══════════════════════════ boot ══════════════════════════ */
+  render();
+  renderTray();
+</script>
+
+<script>
+  const stage = document.querySelector('.sh-stage');
+  const screens = [...stage.querySelectorAll('[data-screen]')];
+  const screenSelect = document.getElementById('sh-screen');
+  const stateSelect = document.getElementById('sh-state');
+  const vpBtn = document.getElementById('sh-vp');
+  let current = null;
+  let currentStates = [];
+
+  screens.forEach(s => {
+    const option = document.createElement('option');
+    option.textContent = s.dataset.title || s.dataset.screen;
+    option.value = s.dataset.screen;
+    screenSelect.append(option);
+  });
+  screenSelect.onchange = () => show(screenSelect.value);
+
+  function show(slug) {
+    current = screens.find(s => s.dataset.screen === slug) || screens[0];
+    screens.forEach(s => s.hidden = s !== current);
+    screenSelect.value = current.dataset.screen;
+    history.replaceState(null, '', '#' + current.dataset.screen);
+    buildStates();
+  }
+
+  function buildStates() {
+    const declared = (current.dataset.states || '').split(',').map(x => x.trim()).filter(Boolean);
+    currentStates = ['Default', ...declared.filter(name => name !== 'Default')];
+    stateSelect.innerHTML = '';
+    currentStates.forEach(name => {
+      const option = document.createElement('option');
+      option.textContent = name;
+      option.value = name;
+      stateSelect.append(option);
+    });
+    applyState('Default');
+  }
+
+  function applyState(name) {
+    const active = currentStates.includes(name) ? name : 'Default';
+    current.querySelectorAll('[data-when]').forEach(el => {
+      el.hidden = !el.dataset.when.split(',').map(x => x.trim()).includes(active);
+    });
+    if (active === '결과 없음') { enterEmptyPreset(); } else { exitEmptyPreset(); }
+    stateSelect.value = active;
+  }
+  stateSelect.onchange = () => applyState(stateSelect.value);
+
+  window.prototypeShell = {
+    showScreen: show,
+    setState: applyState,
+    getScreen: () => current?.dataset.screen,
+    getState: () => stateSelect.value
+  };
+
+  const VPS = ['full', '390', '768'];
+  let vp = VPS.find(v => document.body.classList.contains('sh-vp-' + v)) || 'full';
+  function applyVp() {
+    VPS.forEach(v => document.body.classList.toggle('sh-vp-' + v, v === vp && v !== 'full'));
+    vpBtn.textContent = 'vp: ' + vp + ' (m)';
+    vpBtn.classList.toggle('on', vp !== 'full');
+  }
+  vpBtn.onclick = () => { vp = VPS[(VPS.indexOf(vp) + 1) % VPS.length]; applyVp(); };
+  applyVp();
+
+  addEventListener('keydown', e => {
+    if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    const i = screens.indexOf(current);
+    if (e.key === 'ArrowRight') show(screens[(i + 1) % screens.length].dataset.screen);
+    if (e.key === 'ArrowLeft') show(screens[(i - 1 + screens.length) % screens.length].dataset.screen);
+    if (e.key === 'm') vpBtn.click();
+  });
+
+  addEventListener('hashchange', () => show(location.hash.slice(1)));
+  show(location.hash.slice(1));
+</script>
