@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   estimateDives,
-  getDestinations,
   matchesFilters,
   splitByCondition,
   type Destination,
@@ -33,7 +32,11 @@ const MapPanel = dynamic(() => import("./map-panel").then((m) => m.MapPanel), {
 
 const CURRENT_MONTH = new Date().getMonth() + 1;
 
-export function SearchScreen() {
+interface SearchScreenProps {
+  destinations: Destination[];
+}
+
+export function SearchScreen({ destinations: allDestinations }: SearchScreenProps) {
   const [month, setMonth] = useState(CURRENT_MONTH);
   const [days, setDays] = useState(5);
   const [dives, setDives] = useState(() => estimateDives(5));
@@ -74,8 +77,6 @@ export function SearchScreen() {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-
-  const allDestinations = useMemo(() => getDestinations(), []);
 
   const matched = useMemo(
     () => allDestinations.filter((d) => matchesFilters(d, { region, styles })),
