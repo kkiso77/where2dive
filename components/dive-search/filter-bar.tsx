@@ -11,7 +11,7 @@ const DAY_OPTIONS = [3, 4, 5, 6, 7, 9, 11];
 
 const ALL_STYLES: DiveStyle[] = ["초급자", "조류", "드리프트", "대물", "매크로"];
 
-const REGIONS: Region[] = ["필리핀", "태국", "말레이시아", "인도네시아"];
+const REGIONS: Region[] = ["필리핀", "베트남", "태국", "말레이시아", "미얀마", "인도네시아"];
 
 interface FilterBarProps {
   month: number;

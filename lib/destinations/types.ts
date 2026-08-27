@@ -2,7 +2,7 @@ export type ConditionLevel = "optimal" | "good" | "poor";
 
 export type DiveStyle = "초급자" | "조류" | "드리프트" | "대물" | "매크로";
 
-export type Region = "필리핀" | "태국" | "말레이시아" | "인도네시아";
+export type Region = "필리핀" | "태국" | "말레이시아" | "인도네시아" | "베트남" | "미얀마";
 
 export interface DiveBand {
   label: string;
